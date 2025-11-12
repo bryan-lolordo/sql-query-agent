@@ -1,0 +1,1 @@
+# SQL syntax validation tool
