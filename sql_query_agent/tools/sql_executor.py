@@ -8,7 +8,7 @@ import os
 class SQLExecutor:
     """Executes SQL queries safely against the database."""
     
-    def __init__(self, db_path: str = "sample_data/sample_db.sqlite"):
+    def __init__(self, db_path: str = "data/ecommerce.sqlite"):
         """
         Initialize executor with database path.
         

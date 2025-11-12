@@ -8,7 +8,7 @@ import os
 class SchemaAnalyzer:
     """Analyzes database schema to provide context for SQL generation."""
     
-    def __init__(self, db_path: str = "sample_data/sample_db.sqlite"):
+    def __init__(self, db_path: str = "data/ecommerce.sqlite"):
         """
         Initialize analyzer with database path.
         

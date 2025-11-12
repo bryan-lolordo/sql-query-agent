@@ -2,7 +2,7 @@
 
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate  # FIXED: Changed from langchain.prompts
 
 from ..tools.sql_validator import SQLValidator
 from ..tools.sql_executor import SQLExecutor
@@ -49,6 +49,15 @@ def generate_sql(state: SQLAgentState) -> Dict[str, Any]:
     previous_queries = state.get("previous_queries", [])
     attempt = state.get("attempt", 1)
     
+    # Format schema for prompt
+    schema_str = ""
+    for table_name, columns in schema.items():
+        col_info = ", ".join([
+            f"{col['name']} ({col['type']}{'*' if col.get('primary_key') else ''})"
+            for col in columns
+        ])
+        schema_str += f"{table_name}: [{col_info}]\n"
+    
     # Build context-aware prompt
     error_context = ""
     if previous_errors:
@@ -75,7 +84,7 @@ Rules:
     chain = prompt | llm
     response = chain.invoke({
         "user_query": user_query,
-        "schema": schema,
+        "schema": schema_str,
         "error_context": error_context
     })
     
@@ -118,8 +127,20 @@ def execute_sql(state: SQLAgentState) -> Dict[str, Any]:
     
     try:
         result = executor.execute(sql_query)
+        
+        # Convert to list of dicts for easier handling
+        rows_as_dicts = [
+            {col: val for col, val in zip(result["columns"], row)}
+            for row in result["rows"]
+        ]
+        
         return {
-            "execution_result": result,
+            "execution_result": {
+                "columns": result["columns"],
+                "rows": result["rows"],
+                "data": rows_as_dicts,
+                "row_count": result["row_count"]
+            },
             "execution_error": None,
             "success": True
         }
@@ -143,11 +164,22 @@ def analyze_error(state: SQLAgentState) -> Dict[str, Any]:
     
     error = state.get("execution_error", "")
     sql_query = state["sql_query"]
+    previous_errors = state.get("previous_errors", [])
     
-    analysis = error_analyzer.analyze(error, sql_query)
+    # Use error analyzer to get detailed info
+    analysis = ErrorAnalyzer.analyze_error(error, sql_query)
+    problem_area = ErrorAnalyzer.extract_problem_area(error, sql_query)
+    
+    # Format enhanced error message
+    enhanced_error = f"{error}\n\n"
+    enhanced_error += f"Error Type: {analysis['error_type']}\n"
+    enhanced_error += f"Suggestion: {analysis['suggested_fix']}\n"
+    
+    if problem_area:
+        enhanced_error += f"Problem Area: {problem_area}\n"
     
     return {
-        "execution_error": f"{error}\n\nAnalysis: {analysis}"
+        "execution_error": enhanced_error
     }
 
 
@@ -155,7 +187,14 @@ def format_results(state: SQLAgentState) -> Dict[str, Any]:
     """Format query results for display."""
     
     result = state["execution_result"]
-    formatted = result_formatter.format(result)
+    sql_query = state["sql_query"]
+    
+    # Use result formatter
+    formatted = ResultFormatter.format_results(
+        result.get("data", []),
+        sql_query,
+        max_rows=100
+    )
     
     return {
         "formatted_result": formatted

@@ -1,6 +1,7 @@
 """Streamlit UI for the SQL Query Agent."""
 
 import streamlit as st
+import pandas as pd
 import os
 from dotenv import load_dotenv
 from sql_query_agent.graph.workflow import create_graph
@@ -36,7 +37,7 @@ with st.sidebar:
     # Database selection
     db_path = st.text_input(
         "Database Path",
-        value="sample_data/sample_db.sqlite",
+        value="data/ecommerce.sqlite",
         help="Path to your SQLite database"
     )
     
@@ -55,11 +56,13 @@ with st.sidebar:
             analyzer = SchemaAnalyzer(db_path)
             schema = analyzer.get_schema()
             st.subheader("Database Schema")
-            for table_name, table_info in schema.items():
+            for table_name, columns in schema.items():
                 with st.expander(f"Table: {table_name}"):
                     st.write("**Columns:**")
-                    for col in table_info["columns"]:
-                        st.write(f"- {col['name']} ({col['type']})")
+                    for col in columns:
+                        pk_marker = " 🔑" if col.get('primary_key') else ""
+                        null_marker = " (NOT NULL)" if col.get('not_null') else ""
+                        st.write(f"- {col['name']} ({col['type']}){pk_marker}{null_marker}")
         else:
             st.error(f"Database not found at: {db_path}")
     
@@ -131,19 +134,18 @@ if prompt := st.chat_input("Ask a question about your data..."):
                         st.code(result["sql_query"], language="sql")
                     
                     # Show results
-                    if result["execution_result"]:
+                    if result["execution_result"] and result["execution_result"].get("data"):
                         st.subheader("📊 Results")
-                        if result["execution_result"].get("dataframe") is not None:
-                            st.dataframe(
-                                result["execution_result"]["dataframe"],
-                                use_container_width=True
-                            )
-                            st.caption(result["execution_result"]["message"])
-                        else:
-                            st.info(result["execution_result"]["message"])
+                        df = pd.DataFrame(result["execution_result"]["data"])
+                        st.dataframe(df, use_container_width=True)
+                        
+                        row_count = result["execution_result"].get("row_count", len(df))
+                        st.caption(f"Returned {row_count} row(s)")
+                    elif result["execution_result"]:
+                        st.info("Query executed successfully but returned no results.")
                     
                     # Show attempt history if multiple attempts
-                    if result["attempt"] > 1:
+                    if result["attempt"] > 1 and result.get("previous_queries"):
                         with st.expander("🔄 Attempt History"):
                             for i, (query, error) in enumerate(zip(
                                 result["previous_queries"],
@@ -154,7 +156,7 @@ if prompt := st.chat_input("Ask a question about your data..."):
                                 st.error(f"Error: {error}")
                                 st.divider()
                     
-                    response_content = result["formatted_result"] or "Query executed successfully!"
+                    response_content = "Query executed successfully!"
                 else:
                     st.error(f"❌ Failed after {result['attempt']} attempt(s)")
                     
@@ -167,7 +169,7 @@ if prompt := st.chat_input("Ask a question about your data..."):
                         st.error(f"Error: {result['execution_error']}")
                     
                     # Show all attempts
-                    if result["previous_queries"]:
+                    if result.get("previous_queries"):
                         with st.expander("🔄 All Attempts"):
                             for i, (query, error) in enumerate(zip(
                                 result["previous_queries"],
@@ -188,6 +190,8 @@ if prompt := st.chat_input("Ask a question about your data..."):
                 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": f"Error: {str(e)}"

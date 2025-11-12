@@ -68,3 +68,22 @@ def build_graph():
     app = workflow.compile()
     
     return app
+
+
+def create_graph(db_path: str = "data/ecommerce.sqlite"):
+    """
+    Create and return the compiled graph with database path.
+    
+    Note: This modifies the global instances in nodes.py.
+    A better approach would be to pass db_path through state.
+    """
+    # Import here to avoid circular imports
+    from . import nodes
+    from ..tools.sql_executor import SQLExecutor
+    from ..tools.schema_analyzer import SchemaAnalyzer
+    
+    # Update the global instances in nodes.py with the new db_path
+    nodes.executor = SQLExecutor(db_path)
+    nodes.schema_analyzer = SchemaAnalyzer(db_path)
+    
+    return build_graph()
