@@ -1,3 +1,19 @@
-streamlit
-sqlite3
-sqlparse
+# Core LangGraph and LangChain dependencies
+langgraph>=0.0.20
+langchain>=0.1.0
+langchain-openai>=0.0.5
+
+# UI and Data Handling
+streamlit>=1.28.0
+pandas>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+sqlparse>=0.4.4
+
+# Type hints support
+typing-extensions>=4.5.0
+
+# Testing (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
