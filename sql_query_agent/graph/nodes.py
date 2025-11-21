@@ -2,7 +2,7 @@
 
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate  # FIXED: Changed from langchain.prompts
+from langchain_core.prompts import ChatPromptTemplate
 
 from ..tools.sql_validator import SQLValidator
 from ..tools.sql_executor import SQLExecutor
@@ -23,6 +23,8 @@ result_formatter = ResultFormatter()
 def parse_intent(state: SQLAgentState) -> Dict[str, Any]:
     """Parse user's intent and prepare context for SQL generation."""
     
+    print(f"\n🟢 PARSE_INTENT called - current attempt: {state.get('attempt', 'NOT SET')}")
+ 
     user_query = state["user_query"]
     schema = state.get("schema", {})
     
@@ -30,14 +32,22 @@ def parse_intent(state: SQLAgentState) -> Dict[str, Any]:
     if not schema:
         schema = schema_analyzer.get_schema()
     
-    return {
-        "schema": schema,
-        "attempt": 1,
-        "max_attempts": 3,
-        "previous_errors": [],
-        "previous_queries": [],
-        "success": False
-    }
+    # ONLY initialize these if they don't exist (first run)
+    updates = {"schema": schema}
+    
+    # Don't overwrite attempt if it already exists
+    if "attempt" not in state:
+        updates["attempt"] = 1
+    if "max_attempts" not in state:
+        updates["max_attempts"] = 3
+    if "previous_errors" not in state:
+        updates["previous_errors"] = []
+    if "previous_queries" not in state:
+        updates["previous_queries"] = []
+    if "success" not in state:
+        updates["success"] = False
+    
+    return updates
 
 
 def generate_sql(state: SQLAgentState) -> Dict[str, Any]:
@@ -48,6 +58,8 @@ def generate_sql(state: SQLAgentState) -> Dict[str, Any]:
     previous_errors = state.get("previous_errors", [])
     previous_queries = state.get("previous_queries", [])
     attempt = state.get("attempt", 1)
+
+    print(f"\n🔵 GENERATE_SQL: Attempt={attempt}")
     
     # Format schema for prompt
     schema_str = ""
@@ -73,10 +85,12 @@ Database Schema:
 {schema}
 
 Rules:
-- Generate ONLY the SQL query, no explanations
+- Generate ONLY the SQL query, no explanations or text
+- If the requested table doesn't exist in the schema, create a SELECT query anyway using the closest matching table
 - Use proper SQLite syntax
 - Be specific with column names from the schema
 - Use appropriate WHERE, JOIN, GROUP BY, ORDER BY clauses
+- NEVER respond with explanatory text - ONLY SQL code
 {error_context}"""),
         ("user", "{user_query}")
     ])
@@ -93,6 +107,8 @@ Rules:
     # Clean up SQL (remove markdown, extra whitespace)
     sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
     
+    print(f"   📝 Generated: {sql_query[:100]}...")
+    
     return {
         "sql_query": sql_query,
         "attempt": attempt
@@ -103,9 +119,13 @@ def validate_sql(state: SQLAgentState) -> Dict[str, Any]:
     """Validate SQL syntax."""
     
     sql_query = state["sql_query"]
+    attempt = state.get("attempt", 1)
     is_valid, error = validator.validate(sql_query)
     
+    print(f"\n🔍 VALIDATE_SQL: is_valid={is_valid}")
+    
     if not is_valid:
+        print(f"   ❌ Validation failed: {error}")
         # Add to error history
         previous_errors = state.get("previous_errors", [])
         previous_queries = state.get("previous_queries", [])
@@ -114,19 +134,28 @@ def validate_sql(state: SQLAgentState) -> Dict[str, Any]:
             "execution_error": f"Syntax Error: {error}",
             "previous_errors": previous_errors + [f"Syntax Error: {error}"],
             "previous_queries": previous_queries + [sql_query],
-            "attempt": state["attempt"] + 1
+            "attempt": attempt + 1,
+            "success": False
         }
     
-    return {}
+    print(f"   ✅ Validation passed")
+    return {
+        "execution_error": None  # Clear any old errors when validation passes
+    }
 
 
 def execute_sql(state: SQLAgentState) -> Dict[str, Any]:
     """Execute SQL query safely."""
     
     sql_query = state["sql_query"]
+    attempt = state.get("attempt", 1) 
+
+    print(f"\n🔵 EXECUTE_SQL: Attempt={attempt}")
     
     try:
         result = executor.execute(sql_query)
+
+        print(f"   ✅ SUCCESS!")
         
         # Convert to list of dicts for easier handling
         rows_as_dicts = [
@@ -145,6 +174,8 @@ def execute_sql(state: SQLAgentState) -> Dict[str, Any]:
             "success": True
         }
     except Exception as e:
+        print(f"   ❌ FAILED: {str(e)}")
+        print(f"   Incrementing attempt from {attempt} to {attempt + 1}")
         # Add to error history
         previous_errors = state.get("previous_errors", [])
         previous_queries = state.get("previous_queries", [])
@@ -154,7 +185,7 @@ def execute_sql(state: SQLAgentState) -> Dict[str, Any]:
             "execution_error": error_msg,
             "previous_errors": previous_errors + [error_msg],
             "previous_queries": previous_queries + [sql_query],
-            "attempt": state["attempt"] + 1,
+            "attempt": attempt + 1,
             "success": False
         }
 
@@ -165,6 +196,9 @@ def analyze_error(state: SQLAgentState) -> Dict[str, Any]:
     error = state.get("execution_error", "")
     sql_query = state["sql_query"]
     previous_errors = state.get("previous_errors", [])
+    attempt = state.get("attempt", 1)
+    
+    print(f"\n🟡 ANALYZE_ERROR: Attempt={attempt}")
     
     # Use error analyzer to get detailed info
     analysis = ErrorAnalyzer.analyze_error(error, sql_query)
@@ -179,7 +213,8 @@ def analyze_error(state: SQLAgentState) -> Dict[str, Any]:
         enhanced_error += f"Problem Area: {problem_area}\n"
     
     return {
-        "execution_error": enhanced_error
+        "execution_error": enhanced_error,
+        "attempt": attempt  # Preserve attempt counter
     }
 
 

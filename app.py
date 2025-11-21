@@ -1,14 +1,21 @@
 """Streamlit UI for the SQL Query Agent."""
 
-import streamlit as st
-import pandas as pd
 import os
 from dotenv import load_dotenv
+
+# Load environment variables FIRST before any other imports
+load_dotenv()
+
+# Verify the key is loaded
+if not os.getenv("OPENAI_API_KEY"):
+    raise ValueError("OPENAI_API_KEY not found in environment. Please check your .env file.")
+
+# Now import everything else AFTER load_dotenv()
+import streamlit as st
+import pandas as pd
 from sql_query_agent.graph.workflow import create_graph
 from sql_query_agent.tools.schema_analyzer import SchemaAnalyzer
 
-# Load environment variables
-load_dotenv()
 
 # Page configuration
 st.set_page_config(
@@ -113,7 +120,7 @@ if prompt := st.chat_input("Ask a question about your data..."):
                     "sql_query": "",
                     "execution_result": None,
                     "execution_error": None,
-                    "attempt": 0,
+                    "attempt": 1,
                     "max_attempts": max_attempts,
                     "previous_errors": [],
                     "previous_queries": [],
@@ -137,7 +144,7 @@ if prompt := st.chat_input("Ask a question about your data..."):
                     if result["execution_result"] and result["execution_result"].get("data"):
                         st.subheader("📊 Results")
                         df = pd.DataFrame(result["execution_result"]["data"])
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width='stretch')
                         
                         row_count = result["execution_result"].get("row_count", len(df))
                         st.caption(f"Returned {row_count} row(s)")
