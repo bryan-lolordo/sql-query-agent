@@ -306,7 +306,7 @@ This is part of my **Agentic AI Portfolio**:
 |---------|-----------|---------|
 | [Career Copilot](https://github.com/bryan-lolordo/career-copilot) | Semantic Kernel | Tool Orchestration |
 | **SQL Query Agent** | LangGraph | Self-Correction Loops |
-| Code Review Crew (Coming Soon) | AutoGen | Multi-Agent Collaboration |
+| [Code Review Crew](https://github.com/bryan-lolordo/code-review-crew.git) | AutoGen | Multi-Agent Collaboration |
 
 ## 📖 Documentation
 
