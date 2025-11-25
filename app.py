@@ -90,119 +90,121 @@ with st.sidebar:
 # Main chat interface
 st.header("💬 Ask a Question")
 
-# Display chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
 # Chat input
 if prompt := st.chat_input("Ask a question about your data..."):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Display user message
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # Display assistant response
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            try:
-                # Create or get the graph
-                if st.session_state.graph is None:
-                    st.session_state.graph = create_graph(db_path)
+    with st.spinner("🤔 Thinking..."):
+        try:
+            # Create or get the graph
+            if st.session_state.graph is None:
+                st.session_state.graph = create_graph(db_path)
+            
+            graph = st.session_state.graph
+            
+            # Run the agent
+            initial_state = {
+                "user_query": prompt,
+                "sql_query": "",
+                "execution_result": None,
+                "execution_error": None,
+                "attempt": 1,
+                "max_attempts": max_attempts,
+                "previous_errors": [],
+                "previous_queries": [],
+                "formatted_result": None,
+                "success": False,
+                "schema": {}
+            }
+            
+            # Execute the graph
+            result = graph.invoke(initial_state)
+            
+            # ============================================
+            # VISUAL JOURNEY DISPLAY
+            # ============================================
+            
+            # 1. Show User Query
+            st.markdown("---")
+            st.subheader("🗣️ Your Question")
+            st.info(prompt)
+            
+            # 2. Show Self-Correction Journey
+            st.subheader("🔄 Self-Correction Journey")
+            
+            # Get all attempts
+            all_queries = result.get("previous_queries", []).copy()
+            all_errors = result.get("previous_errors", []).copy()
+            
+            # Add final query
+            if result.get("sql_query"):
+                all_queries.append(result["sql_query"])
+            
+            # Display each attempt
+            for i, query in enumerate(all_queries, 1):
+                is_last = (i == len(all_queries))
+                is_success = is_last and result.get("success")
                 
-                graph = st.session_state.graph
+                # Attempt header
+                col1, col2 = st.columns([1, 11])
+                with col1:
+                    if is_success:
+                        st.markdown(f"### ✅")
+                    else:
+                        st.markdown(f"### ❌")
+                with col2:
+                    st.markdown(f"### Attempt {i}")
                 
-                # Run the agent
-                initial_state = {
-                    "user_query": prompt,
-                    "sql_query": "",
-                    "execution_result": None,
-                    "execution_error": None,
-                    "attempt": 1,
-                    "max_attempts": max_attempts,
-                    "previous_errors": [],
-                    "previous_queries": [],
-                    "formatted_result": None,
-                    "success": False,
-                    "schema": {}
-                }
+                # SQL Code
+                st.code(query, language="sql")
                 
-                # Execute the graph
-                result = graph.invoke(initial_state)
+                # Result of this attempt
+                if is_success:
+                    st.success("**Success!** Query executed successfully.")
+                elif i <= len(all_errors):
+                    st.error(f"**Error:** {all_errors[i-1]}")
+                    
+                    # Show learning step
+                    if not is_last:
+                        st.warning("🧠 **Learning:** Analyzing error and adjusting approach...")
                 
-                # Display results
-                if result["success"]:
-                    st.success(f"✅ Success after {result['attempt']} attempt(s)!")
+                st.markdown("")  # Spacing
+            
+            # 3. Show Results (if successful)
+            if result["success"]:
+                st.markdown("---")
+                st.subheader("📊 Results")
+                
+                if result["execution_result"] and result["execution_result"].get("data"):
+                    df = pd.DataFrame(result["execution_result"]["data"])
+                    st.dataframe(df, width='stretch')
                     
-                    # Show generated SQL
-                    with st.expander("📝 Generated SQL", expanded=True):
-                        st.code(result["sql_query"], language="sql")
-                    
-                    # Show results
-                    if result["execution_result"] and result["execution_result"].get("data"):
-                        st.subheader("📊 Results")
-                        df = pd.DataFrame(result["execution_result"]["data"])
-                        st.dataframe(df, width='stretch')
-                        
-                        row_count = result["execution_result"].get("row_count", len(df))
-                        st.caption(f"Returned {row_count} row(s)")
-                    elif result["execution_result"]:
-                        st.info("Query executed successfully but returned no results.")
-                    
-                    # Show attempt history if multiple attempts
-                    if result["attempt"] > 1 and result.get("previous_queries"):
-                        with st.expander("🔄 Attempt History"):
-                            for i, (query, error) in enumerate(zip(
-                                result["previous_queries"],
-                                result["previous_errors"]
-                            ), 1):
-                                st.markdown(f"**Attempt {i}:**")
-                                st.code(query, language="sql")
-                                st.error(f"Error: {error}")
-                                st.divider()
-                    
-                    response_content = "Query executed successfully!"
+                    row_count = result["execution_result"].get("row_count", len(df))
+                    st.caption(f"Returned {row_count} row(s)")
                 else:
-                    st.error(f"❌ Failed after {result['attempt']} attempt(s)")
-                    
-                    # Show last SQL attempted
-                    with st.expander("📝 Last SQL Attempt", expanded=True):
-                        st.code(result["sql_query"], language="sql")
-                    
-                    # Show error
-                    if result["execution_error"]:
-                        st.error(f"Error: {result['execution_error']}")
-                    
-                    # Show all attempts
-                    if result.get("previous_queries"):
-                        with st.expander("🔄 All Attempts"):
-                            for i, (query, error) in enumerate(zip(
-                                result["previous_queries"],
-                                result["previous_errors"]
-                            ), 1):
-                                st.markdown(f"**Attempt {i}:**")
-                                st.code(query, language="sql")
-                                st.error(f"Error: {error}")
-                                st.divider()
-                    
-                    response_content = result.get("formatted_result") or "I couldn't complete your query. Please try rephrasing or check the database schema."
+                    st.info("Query executed successfully but returned no results.")
                 
-                # Add assistant response to chat history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response_content
-                })
+                # Summary
+                st.markdown("---")
+                if result["attempt"] > 1:
+                    st.success(f"🎉 **Success after {result['attempt']} attempt(s)!** The agent learned from {result['attempt']-1} failed attempt(s) and self-corrected.")
+                else:
+                    st.success(f"🎉 **Success on first attempt!**")
+            
+            else:
+                # Failed after all attempts
+                st.markdown("---")
+                st.error(f"❌ **Failed after {result['attempt']} attempt(s)**")
                 
-            except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
-                import traceback
+                if result.get("formatted_result"):
+                    st.warning(result["formatted_result"])
+                else:
+                    st.warning("Unable to generate a working SQL query. Please try rephrasing your question or check the database schema.")
+            
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+            import traceback
+            with st.expander("🐛 Error Details"):
                 st.code(traceback.format_exc())
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": f"Error: {str(e)}"
-                })
 
 # Clear chat button
 if st.sidebar.button("🗑️ Clear Chat History"):
