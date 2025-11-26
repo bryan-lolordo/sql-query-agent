@@ -146,8 +146,8 @@ Rules:
     # Track in Observatory
     track_llm_call(
         model_name="gpt-4",
-        prompt_tokens=len(prompt_text.split()) * 1.3,  # Estimate
-        completion_tokens=len(sql_query.split()) * 1.3,
+        prompt_tokens=int(len(prompt_text.split()) * 1.3),  # Estimate
+        completion_tokens=int(len(sql_query.split()) * 1.3),
         latency_ms=latency_ms,
         agent_name="SQLGenerator",
         operation="generate_sql",
