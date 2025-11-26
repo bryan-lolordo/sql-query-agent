@@ -10,6 +10,20 @@ load_dotenv()
 if not os.getenv("OPENAI_API_KEY"):
     raise ValueError("OPENAI_API_KEY not found in environment. Please check your .env file.")
 
+# Configure logging
+import logging
+import warnings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+
 # Now import everything else AFTER load_dotenv()
 import streamlit as st
 import pandas as pd
@@ -93,11 +107,17 @@ st.header("💬 Ask a Question")
 # Chat input
 if prompt := st.chat_input("Ask a question about your data..."):
     
+    logger.info("="*80)
+    logger.info(f"🚀 NEW QUERY: {prompt}")
+    logger.info("="*80)
+    
     with st.spinner("🤔 Thinking..."):
         try:
             # Create or get the graph
             if st.session_state.graph is None:
+                logger.info("📦 Creating workflow graph...")
                 st.session_state.graph = create_graph(db_path)
+                logger.info("✅ Graph created")
             
             graph = st.session_state.graph
             
@@ -117,7 +137,9 @@ if prompt := st.chat_input("Ask a question about your data..."):
             }
             
             # Execute the graph
+            logger.info("🚀 Starting workflow execution...")
             result = graph.invoke(initial_state)
+            logger.info(f"✅ Workflow completed - Success: {result.get('success')}")
             
             # ============================================
             # VISUAL JOURNEY DISPLAY
@@ -180,6 +202,7 @@ if prompt := st.chat_input("Ask a question about your data..."):
                     
                     row_count = result["execution_result"].get("row_count", len(df))
                     st.caption(f"Returned {row_count} row(s)")
+                    logger.info(f"📊 Displayed {row_count} rows to user")
                 else:
                     st.info("Query executed successfully but returned no results.")
                 
@@ -187,13 +210,16 @@ if prompt := st.chat_input("Ask a question about your data..."):
                 st.markdown("---")
                 if result["attempt"] > 1:
                     st.success(f"🎉 **Success after {result['attempt']} attempt(s)!** The agent learned from {result['attempt']-1} failed attempt(s) and self-corrected.")
+                    logger.info(f"🎉 Success after {result['attempt']} attempts")
                 else:
                     st.success(f"🎉 **Success on first attempt!**")
+                    logger.info("🎉 Success on first attempt")
             
             else:
                 # Failed after all attempts
                 st.markdown("---")
                 st.error(f"❌ **Failed after {result['attempt']} attempt(s)**")
+                logger.error(f"❌ Failed after {result['attempt']} attempts")
                 
                 if result.get("formatted_result"):
                     st.warning(result["formatted_result"])
@@ -201,6 +227,7 @@ if prompt := st.chat_input("Ask a question about your data..."):
                     st.warning("Unable to generate a working SQL query. Please try rephrasing your question or check the database schema.")
             
         except Exception as e:
+            logger.error(f"❌ Error occurred: {str(e)}")
             st.error(f"An error occurred: {str(e)}")
             import traceback
             with st.expander("🐛 Error Details"):
